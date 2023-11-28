@@ -1,0 +1,82 @@
+---
+title: "Fig_4"
+author: "Cathrine Hellerschmied"
+date: "2023-11-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(stringr)
+library(here)
+library(ggprism)
+
+mainDir <- here()
+OutDir <- "./Out"
+plotDir <- "./Out/plots"
+
+dir.create(file.path(mainDir,OutDir, plotDir))
+dir.create(file.path(plotDir))
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+data <- read.csv("./Source_data_Fig4.csv", sep = ";")
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+
+data_M3 <-data  %>% select(position, starts_with("p_"), cycle, mesocosm) %>%
+  select(!p_bar)
+
+```
+
+
+```{r}
+data_M3_delta <-data_M3 %>% pivot_wider(names_from = position, values_from = c(p_H2, p_CH4, p_CO2)) %>%
+  mutate(pH2_delta = p_H2_End - p_H2_Start, .after = p_H2_End) %>%
+  mutate(pCH4_delta = p_CH4_End - p_CH4_Start, .after = p_CH4_End) %>%
+  mutate(pCO2_delta = p_CO2_End - p_CO2_Start, .after = p_CO2_End)
+
+data_M3_delta_long <-data_M3_delta %>% #select(ends_with("delta")) %>% 
+  pivot_longer(cols = ends_with("delta"), names_to = "Gas", values_to = "delta_partial_P")
+
+
+data_M3_mean <-data_M3_delta_long %>% group_by(Gas) %>% summarise(mean_delta_p = mean(delta_partial_P),sd_delta_p = sd(delta_partial_P))
+
+data_M3_mean<- data_M3_mean %>% mutate(upper = mean_delta_p + sd_delta_p) %>% mutate(lower = mean_delta_p - sd_delta_p)
+
+
+```
+
+```{r}
+ggplot(data = data_M3_delta_long) +
+  geom_bar(data = data_M3_mean, aes(x = Gas, y = mean_delta_p, fill = Gas), position = "dodge", stat = "identity") +
+  geom_errorbar(data = data_M3_mean, aes(x= Gas, ymin = lower, ymax = upper), width = 0.2, linewidth = 0.3) +
+  geom_jitter(data = data_M3_delta_long, aes(x = Gas, y = delta_partial_P), shape = 1, size = 0.8 , alpha = 0.5) +
+  scale_fill_manual(values = c("#FC4E07","#E7B800", "#00AFBB"), 
+                    labels = c("CH4", "CO2", "H2")) +
+  scale_x_discrete(labels=c("pCH4_delta" = "Methane", "pCO2_delta" = "Carbon dioxide",
+                              "pH2_delta" = "Hydrogen")) +
+  geom_hline(yintercept = 0) +
+  theme_prism(base_size = 9) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_text(size = 8), 
+        legend.position = "bottom", plot.margin = margin(l= 12, t = 6, r = 6)) +
+  ylim(c(-5, 2)) +
+  ylab("Partital pressure change [bar]")
+
+ggsave(filename = "./Out/plots/Figure4.pdf", dpi = 600, width = 90, height = 100, units = "mm")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
