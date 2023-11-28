@@ -1,0 +1,109 @@
+---
+title: "Gas balance of H2 an CO2 for field trial"
+author: "Cathrine Hellerschmied"
+date: "2023-06-01"
+output: html_document
+---
+
+```{r setup, include=T}
+knitr::opts_chunk$set(echo = TRUE)
+#load libraries to process data
+library(tidyverse)
+library(cowplot) # required to assemble figures into nice grid plots
+#install.packages("remotes")
+#remotes::install_github("csdaw/ggprism")
+library(ggprism) # makes prims style plots with ggplot
+install.packages("scales")
+library(scales)
+install.packages('huxtable')
+library(huxtable)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+#STep 1: load data
+GCtab <- read.csv("./data/Extended_data_table_1.csv", sep = ";", row.names = NULL)
+print(GCtab)
+
+#Remove rows with noisy data:
+
+H2_trim <-GCtab %>% filter(Phase == "Injection" & H2 < 9) %>% select(Num)
+Rows_trim <- as_vector(H2_trim)
+Rows_trim <- c(Rows_trim, c(2819, 2986, 2911, 2731, 1935)) # combine noisy CO2 datapoint with H2 data
+
+
+GCtab_trim <- filter(GCtab,!(rownames(GCtab) %in% Rows_trim)) %>% filter(CO2 < 0.22) %>% 
+  mutate(Flow_rate_Sm3_h = Flow_rate_Sm3_h*1.05491287) # convert to standard cubic meter
+
+GCtab_trim %>% filter(Phase == "Shut-in")
+```
+```{r}
+H2_In <-GCtab_trim %>% filter(Phase == "Injection") %>% summarise(H2_inj = sum((H2*0.01)*Flow_rate_Sm3_h))
+H2_out <-GCtab_trim %>% filter(Phase != "Injection") %>% summarise(H2_prod = sum((H2*0.01)*Flow_rate_Sm3_h))
+
+H2_In - H2_out
+
+df_H2 <- data.frame(
+  H2_m3_in = H2_In,
+  H2_m3_out = H2_out,
+  H2_m3_out_percent = H2_out/H2_In
+)
+
+df_H2
+
+```
+```{r}
+# Calculation of CO2 balance
+# 1) Multiply volume in column flow rate by concentration per phase 
+# 2) Sum all individual volumes (V) per phase and component
+# 3) Calculate difference VCO2 in - (VCO2 P + VCO2 S)
+
+#VCO2in
+CO2_In <- GCtab_trim %>% filter(Phase == "Injection") %>% 
+  select(c(CO2, Flow_rate_Sm3_h)) %>% 
+  mutate(VCO2 = Flow_rate_Sm3_h * CO2 * 0.01)
+
+
+CO2_P <- GCtab_trim %>% filter(Phase == "Production") %>% 
+  select(c(CO2, Flow_rate_Sm3_h))%>% 
+  mutate(VCO2 = Flow_rate_Sm3_h * CO2 * 0.01)
+
+
+CO2_S <- GCtab_trim %>% filter(Phase == "Shut-in") %>% 
+  select(c(CO2, Flow_rate_Sm3_h))%>% 
+  mutate(VCO2 = Flow_rate_Sm3_h* CO2 *0.01)
+
+SUMCO2INJ <-sum(CO2_In$VCO2)
+SUMCO2PRO <-sum(CO2_P$VCO2)
+SUMCO2SH <-sum(CO2_S$VCO2)
+
+
+Volin <- GCtab_trim %>% filter(Phase == "Injection") %>% select(Flow_rate_Sm3_h) %>% sum()
+
+Voloutrag <- 1232324 # Volume of gas extracted from the reservoir according to the field test operator
+Vol_delta <- Voloutrag - Volin
+
+CO2_cush <-Vol_delta * 0.0019 # Estimated volume of CO2 gas extracted from the cushion gas
+
+```
+
+
+```{r}
+deltaVCO2 <- (SUMCO2INJ + (Vol_delta * 0.0019)) - (SUMCO2PRO + SUMCO2SH)
+
+V_CO2_m3 <- c(SUMCO2INJ, CO2_cush, SUMCO2PRO, SUMCO2SH, deltaVCO2)
+
+Phases <- c("Injection","Cushiongas_rag", "Production", "Shut-in", "deltaCO2")
+
+df_CO2vol <- cbind(V_CO2_m3, Phases)
+
+df_CO2vol
+```
+
+
+
